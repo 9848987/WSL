@@ -5,9 +5,8 @@ umask 022
 
 DRY_RUN=false
 CHECK_ONLY=false
-CLIPBOARD_ONLY=true
+INSTALL_CHINESE=false
 UPGRADE=false
-TRIM=false
 STEP=准备
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/wsl-ai-setup"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -26,11 +25,9 @@ usage() {
 默认精简安装剪贴板桥接及自动启动。
   --dry-run         显示安装计划，保持系统当前状态
   --check           检查依赖和后台服务状态
-  --clipboard-only  仅安装剪贴板及其自动启动服务
   --with-chinese    额外安装中文字体、语言和 Fcitx5 输入法
   --upgrade         显式执行系统软件升级
   --skip-upgrade    跳过系统软件升级
-  --trim            完成后对 Linux 根文件系统执行 fstrim
   -h, --help        显示帮助
 请在目标 WSL 的普通用户终端运行，安装过程通过 sudo 请求管理员权限。
 HELP
@@ -41,11 +38,9 @@ parse_args() {
         case "$1" in
             --dry-run) DRY_RUN=true ;;
             --check) CHECK_ONLY=true ;;
-            --clipboard-only) CLIPBOARD_ONLY=true ;;
-            --with-chinese) CLIPBOARD_ONLY=false ;;
+            --with-chinese) INSTALL_CHINESE=true ;;
             --upgrade) UPGRADE=true ;;
             --skip-upgrade) UPGRADE=false ;;
-            --trim) TRIM=true ;;
             -h|--help) usage; exit 0 ;;
             *) fail "未知参数 $1" ;;
         esac
@@ -133,7 +128,6 @@ preflight() {
     . /etc/os-release
     case "${ID:-}" in debian|ubuntu) ;; *) fail '支持 Debian 和 Ubuntu。' ;; esac
     [[ -n ${WSL_DISTRO_NAME:-} && -d /run/WSL ]] || fail '请在目标 WSL 的终端中运行。'
-    [[ $(dpkg --print-architecture) == amd64 ]] || fail '本版桌面安装包适用 amd64。'
     [[ ${DISPLAY:-} =~ ^:[0-9]+(\.[0-9]+)?$ ]] || fail '请在 WSLg 图形终端运行，DISPLAY 应类似 :0。'
     [[ $WSL_DISTRO_NAME =~ ^[A-Za-z0-9._-]+$ ]] || fail '发行版名称包含暂未支持的字符。'
     [[ $CONFIG_DIR == "$HOME/.config" ]] || fail '当前版本要求 XDG_CONFIG_HOME 使用默认 ~/.config。'
@@ -154,7 +148,7 @@ install_packages() {
     STEP=系统组件
     local packages=(coreutils util-linux libc-bin diffutils xclip dbus-user-session
         systemd systemd-sysv)
-    if [[ $CLIPBOARD_ONLY == false ]]; then
+    if [[ $INSTALL_CHINESE == true ]]; then
         packages+=(locales fonts-noto-cjk fonts-wqy-microhei fontconfig fcitx5
             fcitx5-chinese-addons fcitx5-config-qt fcitx5-frontend-gtk3 fcitx5-frontend-qt5)
     fi
@@ -615,7 +609,7 @@ UMask=0077
 [Install]
 WantedBy=default.target
 SERVICE
-    if [[ $CLIPBOARD_ONLY == false ]]; then
+    if [[ $INSTALL_CHINESE == true ]]; then
         write_user_file "$CONFIG_DIR/systemd/user/wsl-fcitx5.service" 644 <<SERVICE
 [Unit]
 Description=Fcitx5 for WSLg
@@ -636,7 +630,7 @@ SERVICE
     user_systemctl enable xclip-bridge.service
     # A manually started watch process owns the same lock and must be stopped by its terminal.
     user_systemctl restart xclip-bridge.service
-    if [[ $CLIPBOARD_ONLY == false ]]; then
+    if [[ $INSTALL_CHINESE == true ]]; then
         user_systemctl enable wsl-fcitx5.service
         user_systemctl restart wsl-fcitx5.service
     fi
@@ -645,7 +639,7 @@ SERVICE
         journalctl --user -u xclip-bridge.service -n 20 --no-pager
         fail '桥接未持续运行。若另一个终端正在运行 xclip --watch，请在该终端按 Ctrl+C 后重试。'
     fi
-    if [[ $CLIPBOARD_ONLY == false ]] && ! user_systemctl is-active --quiet wsl-fcitx5.service; then
+    if [[ $INSTALL_CHINESE == true ]] && ! user_systemctl is-active --quiet wsl-fcitx5.service; then
         journalctl --user -u wsl-fcitx5.service -n 20 --no-pager
         fail 'Fcitx5 用户服务启动失败，请检查以上日志后重新运行。'
     fi
@@ -654,8 +648,8 @@ SERVICE
 main() {
     parse_args "$@"
     if [[ $DRY_RUN == true ]]; then
-        printf '计划安装中文环境=%s，系统升级=%s，磁盘TRIM=%s\n' \
-            "$([[ $CLIPBOARD_ONLY == false ]] && echo 是 || echo 否)" "$UPGRADE" "$TRIM"
+        printf '计划安装中文环境=%s，系统升级=%s\n' \
+            "$([[ $INSTALL_CHINESE == true ]] && echo 是 || echo 否)" "$UPGRADE"
         printf '将安装 xclip 包、内嵌桥接源码、原生辅助程序、用户服务及自动启动。\n'
         printf '已有配置备份至 ~/.local/state/wsl-ai-setup/backups。\n'
         return
@@ -664,14 +658,13 @@ main() {
     preflight
     install_packages
     configure_wsl
-    if [[ $CLIPBOARD_ONLY == false ]]; then configure_chinese; fi
+    if [[ $INSTALL_CHINESE == true ]]; then configure_chinese; fi
     install_clipboard
     configure_services
-    if [[ $TRIM == true ]]; then STEP=磁盘TRIM; sudo fstrim -v /; fi
     STEP=完成
     log "配置备份位于 $BACKUP_DIR"
     check_installation
-    if [[ $CLIPBOARD_ONLY == false ]]; then
+    if [[ $INSTALL_CHINESE == true ]]; then
         printf '\n请重新进入 WSL 用户会话，让中文与输入法环境变量生效。\n'
     fi
     printf '验证 Windows 文本、截图和文件在主聊天输入框的 Ctrl+V。\n'
