@@ -6,18 +6,11 @@ umask 022
 DRY_RUN=false
 CHECK_ONLY=false
 CLIPBOARD_ONLY=false
-INSTALL_APPS=true
-INSTALL_HERMES=true
 UPGRADE=true
 TRIM=false
 STEP=准备
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/wsl-ai-setup"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
-OPENCODE_URL=https://opencode.ai/files/bin/2.2.5/opencode-desktop-linux-amd64.deb
-CHATGPT_URL=https://persistent.oaistatic.com/codex-app-prod/linux/deb/latest/chatgpt_amd64.deb
-HERMES_COMMIT=3b421578588243f920886e6fe79a6faa87ea026e
-HERMES_DIR="$HOME/.local/share/wsl-ai-setup/hermes-agent"
-CONDA_DIR="$HOME/miniconda3"
 TEMP_DIR=
 BACKUP_DIR=
 
@@ -30,12 +23,10 @@ trap 'printf "\n安装在【%s】失败（第%s行）。修复报错后可重新
 usage() {
     cat <<'HELP'
 用法 bash install.sh [选项]
-默认安装中文环境、Fcitx5、剪贴板桥接、OpenCode 2.2.5、ChatGPT 与 Hermes。
+默认安装中文环境、Fcitx5、剪贴板桥接及自动启动。
   --dry-run         显示安装计划，保持系统当前状态
   --check           检查依赖和后台服务状态
   --clipboard-only  仅安装剪贴板及其自动启动服务
-  --skip-apps       跳过 OpenCode 和 ChatGPT
-  --skip-hermes     跳过 Hermes 及 Miniconda
   --skip-upgrade    跳过系统软件升级
   --trim            完成后对 Linux 根文件系统执行 fstrim
   -h, --help        显示帮助
@@ -48,9 +39,7 @@ parse_args() {
         case "$1" in
             --dry-run) DRY_RUN=true ;;
             --check) CHECK_ONLY=true ;;
-            --clipboard-only) CLIPBOARD_ONLY=true; INSTALL_APPS=false; INSTALL_HERMES=false; UPGRADE=false ;;
-            --skip-apps) INSTALL_APPS=false ;;
-            --skip-hermes) INSTALL_HERMES=false ;;
+            --clipboard-only) CLIPBOARD_ONLY=true; UPGRADE=false ;;
             --skip-upgrade) UPGRADE=false ;;
             --trim) TRIM=true ;;
             -h|--help) usage; exit 0 ;;
@@ -115,10 +104,6 @@ write_user_file() {
     install -m "$mode" -- "$staged" "$path"
 }
 
-download() {
-    curl --proto '=https' --tlsv1.2 -fL --retry 3 --connect-timeout 20 "$1" -o "$2"
-}
-
 user_systemctl() {
     DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus" systemctl --user "$@"
 }
@@ -168,8 +153,7 @@ install_packages() {
         systemd systemd-sysv)
     if [[ $CLIPBOARD_ONLY == false ]]; then
         packages+=(locales fonts-noto-cjk fonts-wqy-microhei fontconfig fcitx5
-            fcitx5-chinese-addons fcitx5-config-qt fcitx5-frontend-gtk3 fcitx5-frontend-qt5
-            build-essential libffi-dev libssl-dev pkg-config)
+            fcitx5-chinese-addons fcitx5-config-qt fcitx5-frontend-gtk3 fcitx5-frontend-qt5)
     fi
     apt_run update
     if [[ $UPGRADE == true ]]; then apt_run upgrade -y; fi
@@ -652,81 +636,11 @@ SERVICE
     fi
 }
 
-install_desktop_package() {
-    local label=$1 url=$2
-    local package_file="$TEMP_DIR/$label.deb" package_name version installed
-    download "$url" "$package_file"
-    [[ $(dpkg-deb -f "$package_file" Architecture) == amd64 ]] || fail "$label 安装包架构不匹配。"
-    package_name=$(dpkg-deb -f "$package_file" Package)
-    version=$(dpkg-deb -f "$package_file" Version)
-    installed=$(dpkg-query -W -f='${Version}' "$package_name" 2>/dev/null || true)
-    if [[ -n $installed ]] && dpkg --compare-versions "$installed" ge "$version"; then
-        log "$label 已安装 $installed"
-        return
-    fi
-    chmod 644 "$package_file"
-    apt_run install -y "$package_file"
-}
-
-install_hermes() {
-    STEP=Hermes
-    if command -v hermes >/dev/null && [[ ! -f $HERMES_DIR/.wsl-ai-setup-managed ]]; then
-        log '检测到已有 Hermes。沿用现有安装，环境迁移请单独核验。'
-        return
-    fi
-    if [[ ! -x $CONDA_DIR/bin/conda ]]; then
-        [[ ! -e $CONDA_DIR ]] || fail "$CONDA_DIR 已存在且没有可用 conda，请先检查该目录。"
-        download https://repo.anaconda.com/miniconda/ "$TEMP_DIR/miniconda-index.html"
-        # Read the SHA256 published for this exact installer in Anaconda's index.
-        local checksum
-        checksum=$(awk '/href="Miniconda3-latest-Linux-x86_64.sh"/ {found=1; next} found && /<td>/ {gsub(/.*<td>|<\/td>.*/, ""); if ($0 ~ /^[a-f0-9]+$/ && length($0)==64) {print; exit}}' "$TEMP_DIR/miniconda-index.html")
-        [[ ${#checksum} == 64 ]] || fail '无法读取 Miniconda 官方 SHA256。'
-        download https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh "$TEMP_DIR/miniconda.sh"
-        printf '%s  %s\n' "$checksum" "$TEMP_DIR/miniconda.sh" | sha256sum -c -
-        bash "$TEMP_DIR/miniconda.sh" -b -p "$CONDA_DIR"
-    fi
-    "$CONDA_DIR/bin/conda" --version
-    if [[ ! -d $HERMES_DIR ]]; then
-        git clone --depth 1 --branch v0.23.1 https://github.com/NousResearch/hermes-agent.git "$HERMES_DIR"
-        git -C "$HERMES_DIR" checkout --detach "$HERMES_COMMIT"
-        touch "$HERMES_DIR/.wsl-ai-setup-managed"
-    fi
-    [[ -f $HERMES_DIR/.wsl-ai-setup-managed ]] || fail 'Hermes 目录已有其他内容，请先核验。'
-    [[ $(git -C "$HERMES_DIR" rev-parse HEAD) == "$HERMES_COMMIT" ]] || fail 'Hermes 代码版本已变更，请先核验更新。'
-    if [[ ! -x $HERMES_DIR/env/bin/python ]]; then
-        "$CONDA_DIR/bin/conda" create -y --override-channels -c conda-forge --prefix "$HERMES_DIR/env" python=3.14 pip
-    fi
-    "$HERMES_DIR/env/bin/python" -m pip install -e "$HERMES_DIR"
-    "$HERMES_DIR/env/bin/python" -m pip check
-    "$HERMES_DIR/env/bin/python" "$HERMES_DIR/scripts/write_install_stamp.py" \
-        --output "$HERMES_DIR/install-stamp.json" --commit "$HERMES_COMMIT" \
-        --base-version 0.23.1 --distance 0 --source local --update-mechanism external
-    write_user_file "$HOME/.local/bin/hermes" 755 <<LAUNCHER
-#!/bin/bash
-exec "$HERMES_DIR/env/bin/hermes" "\$@"
-LAUNCHER
-    for ignored in env/ .wsl-ai-setup-managed tech_stack.md install-stamp.json; do
-        if ! grep -Fxq "$ignored" "$HERMES_DIR/.git/info/exclude"; then
-            printf '%s\n' "$ignored" >> "$HERMES_DIR/.git/info/exclude"
-        fi
-    done
-    write_user_file "$HERMES_DIR/tech_stack.md" 644 <<STACK
-# Hermes 环境
-记录者 ChatGPT，状态 verified 适用于安装命令完成后，来源为本安装脚本。
-更新时间 $(date -Iseconds)。
-源码提交 $HERMES_COMMIT，发行版 v0.23.1。
-Miniconda 路径 $CONDA_DIR，项目环境 $HERMES_DIR/env，Python 3.14。
-重建方式为 conda create --prefix 项目/env python=3.14 pip，再使用项目/env/bin/python -m pip install -e 项目。
-STACK
-    "$HOME/.local/bin/hermes" --help > "$TEMP_DIR/hermes-help.txt"
-    log 'Hermes 已安装。首次使用执行 hermes setup，配置模型与登录。'
-}
-
 main() {
     parse_args "$@"
     if [[ $DRY_RUN == true ]]; then
-        printf '计划安装中文环境=%s，桌面应用=%s，Hermes=%s，系统升级=%s，磁盘TRIM=%s\n' \
-            "$([[ $CLIPBOARD_ONLY == false ]] && echo 是 || echo 否)" "$INSTALL_APPS" "$INSTALL_HERMES" "$UPGRADE" "$TRIM"
+        printf '计划安装中文环境=%s，系统升级=%s，磁盘TRIM=%s\n' \
+            "$([[ $CLIPBOARD_ONLY == false ]] && echo 是 || echo 否)" "$UPGRADE" "$TRIM"
         printf '将安装 xclip 包、内嵌桥接源码、原生辅助程序、用户服务及自动启动。\n'
         printf '已有配置备份至 ~/.local/state/wsl-ai-setup/backups。\n'
         return
@@ -738,12 +652,6 @@ main() {
     if [[ $CLIPBOARD_ONLY == false ]]; then configure_chinese; fi
     install_clipboard
     configure_services
-    if [[ $INSTALL_APPS == true ]]; then
-        STEP=桌面应用
-        install_desktop_package opencode "$OPENCODE_URL"
-        install_desktop_package chatgpt "$CHATGPT_URL"
-    fi
-    if [[ $INSTALL_HERMES == true ]]; then install_hermes; fi
     if [[ $TRIM == true ]]; then STEP=磁盘TRIM; sudo fstrim -v /; fi
     STEP=完成
     log "配置备份位于 $BACKUP_DIR"
