@@ -95,6 +95,18 @@ systemctl --user disable --now xclip-bridge.service wsl-fcitx5.service
 
 原生输入框的 Ctrl+V 图片附件和中文输入法界面仍需在目标应用中由用户验收。
 
+## 回归测试
+
+在仓库根目录运行以下命令，退出码为 0 表示全部通过，1 表示存在失败用例。
+
+```bash
+bash tests/watch-regression.sh
+```
+
+测试从 `install.sh` 提取实际桥接脚本，使用隔离的 Linux 模拟后端，覆盖正常文件与目录复制、修改文件后重复复制同一路径，以及复制失败后继续监听并清理半成品。全部临时目录随测试退出清理。
+
+当前发布版本的正常复制用例通过，后两项失败，分别对应路径去重导致旧副本和复制错误导致监听退出。两项失败作为后续修复的回归依据。
+
 ## 官方参考
 
 - [WSL 的 systemd 设置](https://learn.microsoft.com/en-us/windows/wsl/systemd)
