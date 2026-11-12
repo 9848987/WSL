@@ -1,4 +1,4 @@
-# WSL 中文、AI 桌面与剪贴板一键安装
+# WSL 中文与剪贴板一键安装
 
 WSL 中文的粘贴、复制、文件及截图，与windows 主机的互操作。
 
@@ -21,14 +21,11 @@ curl -fL --retry 3 https://raw.githubusercontent.com/9848987/WSL/main/install.sh
 | 纯文本剪贴板 | UTF-8 传输，CRLF / CR 换行转换为 LF |
 | Windows 截图 | 常驻桥接读取 Bitmap，转换 PNG，向同一 DISPLAY 的 X11 剪贴板发布 |
 | 文件及文件夹 | 复制实体至 Linux /tmp/chatgpt-clipboard.随机串/序号/原名称，再向输入框发布副本路径 |
-| OpenCode | 安装原始材料指定的 2.2.5 amd64 桌面包 |
-| ChatGPT | 下载并安装官方 latest amd64 Debian 桌面包 |
-| Hermes | 安装 v0.23.1 源码到 ~/.local/share/wsl-ai-setup/hermes-agent，建立项目 env/ 的 Miniconda Python 3.14 环境 |
 | 自动启动 | 配置 xclip-bridge.service 和 wsl-fcitx5.service，随该 WSL 用户服务管理器启动 |
 
-脚本适用于 amd64、Debian / Ubuntu、WSLg X11 环境，DISPLAY 形如 `:0`。安装 ChatGPT 时还需满足官方系统支持范围，当前官方列出 Debian 13、Ubuntu 24.04 / 26.04。脚本会校验实际安装包架构，依赖不满足时报告失败。
+脚本适用于 amd64、Debian / Ubuntu、WSLg X11 环境，DISPLAY 形如 `:0`。
 
-首次运行若 PID 1 尚非 systemd，脚本会合并 `/etc/wsl.conf` 的 systemd 与互操作设置，保留其他键，然后以状态码 2 结束。保存工作并重新启动目标 WSL 发行版，再运行同一条安装命令。该 Linux 安装脚本会修改 Linux 内的 wsl.conf。Windows 端的 WSL 版本升级和发行版重启由用户完成。
+首次运行若 PID 1 尚非 systemd，脚本会合并 `/etc/wsl.conf` 的 systemd 与互操作设置，保留其他键，然后以状态码 2 结束。保存工作后使用 `wsl -t <发行版名>` 停止目标发行版，再用 `wsl -d <发行版名>` 启动并重新运行安装命令。该 Linux 安装脚本会修改 Linux 内的 wsl.conf。Windows 端的 WSL 版本升级和发行版重启由用户完成。
 
 ## 常用选项
 
@@ -39,8 +36,8 @@ bash /tmp/wsl-ai-install.sh --dry-run
 # 只装文本、截图、文件剪贴板和自启
 bash /tmp/wsl-ai-install.sh --clipboard-only
 
-# 安装中文与剪贴板，跳过桌面应用、Hermes 和系统升级
-bash /tmp/wsl-ai-install.sh --skip-apps --skip-hermes --skip-upgrade
+# 安装中文与剪贴板，跳过系统升级
+bash /tmp/wsl-ai-install.sh --skip-upgrade
 
 # 显式执行 Linux 根文件系统 TRIM
 bash /tmp/wsl-ai-install.sh --trim
@@ -48,10 +45,6 @@ bash /tmp/wsl-ai-install.sh --trim
 # 查看安装结果
 bash /tmp/wsl-ai-install.sh --check
 ```
-
-默认安装包含全部软件。已有 Hermes 命令且来源于其他安装时，会保留现有安装并提示另行核验环境迁移。新装 Hermes 通过项目 `env/bin/python -m pip` 安装依赖，更新方式登记为 external，由本安装方案维护版本。首次运行需要用户自行执行 `hermes setup` 配置模型及登录。Miniconda 缺失时从官方站点下载，使用官方索引的 SHA256 校验后安装到 `~/miniconda3`。已有该目录且不可用时报告错误。
-
-Hermes 安装范围为核心 CLI，浏览器控制等可选工具的额外依赖需要按 Hermes 官方说明另行配置。
 
 ## 完成后的验证
 
@@ -86,7 +79,7 @@ systemctl --user disable --now xclip-bridge.service wsl-fcitx5.service
 
 ## 配置保护与重复运行
 
-已有被修改文件备份到 `~/.local/state/wsl-ai-setup/backups/时间-进程号/`，备份按原绝对路径保存。安装进程通过锁串行执行。配置写入前检查当前内容，修改范围限于本方案管理的文件与配置段。重复运行会重建服务并重启它们，已安装且版本不低于下载包的桌面软件会跳过安装。
+已有被修改文件备份到 `~/.local/state/wsl-ai-setup/backups/时间-进程号/`，备份按原绝对路径保存。安装进程通过锁串行执行。配置写入前检查当前内容，修改范围限于本方案管理的文件与配置段。重复运行会检查配置并重启用户服务。
 
 为整合原始操作步骤，脚本会移除 `.bashrc` / `.profile` 中原样的 `fcitx5 --disable=wayland -d --replace` 启动行和 `eval $(dbus-launch --sh-syntax)` 行，改由用户服务管理输入法。其他自定义 shell 内容保留，修改前会备份。
 
@@ -96,16 +89,13 @@ systemctl --user disable --now xclip-bridge.service wsl-fcitx5.service
 
 ## 验证范围
 
-本次完成 Bash 语法、参数处理、dry-run、内嵌剪贴板源码 SHA256、配置合并及重复执行、备份、权限、服务生成与 systemd 单元验证，以及官方软件包链接可达性检查。剪贴板源码来自已通过用户实际截图粘贴验收的版本，SHA256 为 `3684dec327501136544c744e58584d604f2d0a7a14bd6a537bd243204d76b82c`。
+本次完成 Bash 语法、参数处理、dry-run、内嵌剪贴板源码 SHA256、配置合并及重复执行、备份、权限、服务生成与 systemd 单元验证，以及原生 X11 剪贴板辅助程序检查。剪贴板源码来自已通过用户实际截图粘贴验收的版本，SHA256 为 `3684dec327501136544c744e58584d604f2d0a7a14bd6a537bd243204d76b82c`。
 
-整套安装器尚需在一套干净 WSL 上执行安装并验证中文输入、各应用启动、剪贴板和电脑重启后的行为。安装器检查可以发现部分失败，实际输入框图片附件仍需用户测试。
+2026-11-12 在 Ubuntu 24.04 的独立 Test 发行版完成 `--clipboard-only` 实际安装、20 项隔离测试、10 项宿主剪贴板测试，以及 3 项后台 X11 发布测试。已验证中文文本、PNG 图片持续保留、文件及目录完整复制后发布副本路径。使用 `wsl -t Test` 后重新启动，桥接服务自动运行，根文件系统读写验证通过。
+
+原生输入框的 Ctrl+V 图片附件和中文输入法界面仍需在目标应用中由用户验收。
 
 ## 官方参考
 
 - [WSL 的 systemd 设置](https://learn.microsoft.com/en-us/windows/wsl/systemd)
 - [Fcitx5 配置](https://fcitx-im.org/wiki/Setup_Fcitx_5/en)
-- [ChatGPT Linux 官方安装说明](https://learn.chatgpt.com/docs/linux/linux-app)
-- [OpenCode 下载](https://opencode.ai/product)
-- [Hermes 官方安装说明](https://hermes-agent.nousresearch.com/docs/getting-started/installation/)
-- [Hermes v0.23.1](https://github.com/NousResearch/hermes-agent/releases/tag/v0.23.1)
-- [Miniconda 下载与校验索引](https://repo.anaconda.com/miniconda/)
