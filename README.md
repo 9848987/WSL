@@ -10,18 +10,22 @@ curl -fL --retry 3 https://raw.githubusercontent.com/9848987/WSL/main/install.sh
 
 安装时按终端提示输入该 Linux 用户的 sudo 密码。此前手动运行了 `xclip --watch` 时，先在对应终端按 Ctrl+C 结束该进程，再运行安装命令。
 
-`install.sh` 是自包含脚本，已内嵌完整剪贴板桥接源码，下载单个文件即可运行。默认安装会更新 APT 软件索引并执行 `apt-get upgrade -y`。
+`install.sh` 是自包含脚本，已内嵌完整剪贴板桥接源码，下载单个文件即可运行。默认安装文本、截图、文件及文件夹剪贴板桥接和自动启动。
+
+安装使用 `--no-install-recommends`，由 APT 解析必需依赖。默认仅更新 APT 软件索引并安装所需组件。中文字体和输入法通过 `--with-chinese` 选装，系统软件升级通过 `--upgrade` 显式执行。
+
+精简模式的直接依赖为 `xclip`、`dbus-user-session`、`systemd`、`systemd-sysv`、`coreutils`、`util-linux`、`libc-bin` 和 `diffutils`。WSL 通常已具备其中的大部分基础组件，实际新增包以本机 APT 解析结果为准。X11 库随 `xclip` 的必需依赖安装。
 
 ## 安装内容
 
 | 内容 | 设置结果 |
 |---|---|
-| 中文字体和语言 | 安装 Noto CJK、文泉驿字体，生成 zh_CN.UTF-8，设置系统默认 LANG |
-| Fcitx5 | 安装中文输入法和 GTK3 / Qt5 模块，新用户配置默认拼音，配置用户级后台服务 |
+| 中文字体和语言（选装） | 使用 --with-chinese 安装 Noto CJK、文泉驿字体，生成 zh_CN.UTF-8，设置系统默认 LANG |
+| Fcitx5（选装） | 使用 --with-chinese 安装中文输入法和 GTK3 / Qt5 模块，新用户配置默认拼音，配置用户级后台服务 |
 | 纯文本剪贴板 | UTF-8 传输，CRLF / CR 换行转换为 LF |
 | Windows 截图 | 常驻桥接读取 Bitmap，转换 PNG，向同一 DISPLAY 的 X11 剪贴板发布 |
 | 文件及文件夹 | 复制实体至 Linux /tmp/chatgpt-clipboard.随机串/序号/原名称，再向输入框发布副本路径 |
-| 自动启动 | 配置 xclip-bridge.service 和 wsl-fcitx5.service，随该 WSL 用户服务管理器启动 |
+| 自动启动 | 配置 xclip-bridge.service，选装输入法时另配置 wsl-fcitx5.service，随该 WSL 用户服务管理器启动 |
 
 脚本适用于 amd64、Debian / Ubuntu、WSLg X11 环境，DISPLAY 形如 `:0`。
 
@@ -36,8 +40,11 @@ bash /tmp/wsl-ai-install.sh --dry-run
 # 只装文本、截图、文件剪贴板和自启
 bash /tmp/wsl-ai-install.sh --clipboard-only
 
-# 安装中文与剪贴板，跳过系统升级
-bash /tmp/wsl-ai-install.sh --skip-upgrade
+# 额外安装中文字体和输入法
+bash /tmp/wsl-ai-install.sh --with-chinese
+
+# 显式执行系统软件升级
+bash /tmp/wsl-ai-install.sh --upgrade
 
 # 显式执行 Linux 根文件系统 TRIM
 bash /tmp/wsl-ai-install.sh --trim
@@ -48,7 +55,7 @@ bash /tmp/wsl-ai-install.sh --check
 
 ## 完成后的验证
 
-重新进入同一 WSL 用户会话，让语言和输入法环境生效。完全退出并重新打开需要中文输入的应用。新建的输入法配置包含英文键盘和拼音，可以通过 Fcitx5 配置工具调整。已有输入法 profile 会保留。
+选装中文环境后，重新进入同一 WSL 用户会话，让语言和输入法环境生效。完全退出并重新打开需要中文输入的应用。新建的输入法配置包含英文键盘和拼音，可以通过 Fcitx5 配置工具调整。已有输入法 profile 会保留。
 
 依次验证 Windows 复制中文多行文本、Win+Shift+S 截图、资源管理器复制一个小文件和一个小目录，在目标 WSL 内运行的主聊天输入框按 Ctrl+V。截图应显示图片附件，文件和目录应显示 `/tmp` 副本路径，目录实体应包含内容。
 
