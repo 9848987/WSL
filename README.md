@@ -27,7 +27,7 @@ curl -fL --retry 3 https://raw.githubusercontent.com/9848987/WSL/main/install.sh
 | 文件及文件夹 | 复制实体至 Linux /tmp/chatgpt-clipboard.随机串/序号/原名称，再向输入框发布副本路径 |
 | 自动启动 | 配置 xclip-bridge.service，选装输入法时另配置 wsl-fcitx5.service，随该 WSL 用户服务管理器启动 |
 
-脚本适用于 amd64、Debian / Ubuntu、WSLg X11 环境，DISPLAY 形如 `:0`。
+脚本适用于 Debian / Ubuntu 的 WSLg X11 环境，DISPLAY 形如 `:0`。原生 X11 组件由发行版软件仓库按当前系统架构安装。
 
 首次运行若 PID 1 尚非 systemd，脚本会合并 `/etc/wsl.conf` 的 systemd 与互操作设置，保留其他键，然后以状态码 2 结束。保存工作后使用 `wsl -t <发行版名>` 停止目标发行版，再用 `wsl -d <发行版名>` 启动并重新运行安装命令。该 Linux 安装脚本会修改 Linux 内的 wsl.conf。Windows 端的 WSL 版本升级和发行版重启由用户完成。
 
@@ -37,17 +37,14 @@ curl -fL --retry 3 https://raw.githubusercontent.com/9848987/WSL/main/install.sh
 # 查看计划
 bash /tmp/wsl-ai-install.sh --dry-run
 
-# 只装文本、截图、文件剪贴板和自启
-bash /tmp/wsl-ai-install.sh --clipboard-only
+# 安装文本、截图、文件剪贴板和自启
+bash /tmp/wsl-ai-install.sh
 
 # 额外安装中文字体和输入法
 bash /tmp/wsl-ai-install.sh --with-chinese
 
 # 显式执行系统软件升级
 bash /tmp/wsl-ai-install.sh --upgrade
-
-# 显式执行 Linux 根文件系统 TRIM
-bash /tmp/wsl-ai-install.sh --trim
 
 # 查看安装结果
 bash /tmp/wsl-ai-install.sh --check
@@ -91,8 +88,6 @@ systemctl --user disable --now xclip-bridge.service wsl-fcitx5.service
 为整合原始操作步骤，脚本会移除 `.bashrc` / `.profile` 中原样的 `fcitx5 --disable=wayland -d --replace` 启动行和 `eval $(dbus-launch --sh-syntax)` 行，改由用户服务管理输入法。其他自定义 shell 内容保留，修改前会备份。
 
 成功复制的资料保留在 `/tmp`，系统清理临时目录后需重新复制。后台以剪贴板变化触发复制，源文件后续变化需要重新复制触发。每次新的文件复制事件都会重新获取源内容并生成独立副本。单次复制失败时清理半成品，后台继续处理后续剪贴板事件。
-
-原始材料中的 `wsl --manage ... --set-sparse` 和 `Optimize-VHD` 属于 Windows 虚拟磁盘维护步骤，需在 Windows 端按实际发行版和磁盘路径单独办理。原文固定的 `F:\wsl\ai\ext4.vhdx` 路径仅适用于相应机器。Linux 根盘空间回收可使用本脚本的 `--trim`。
 
 ## 官方参考
 
