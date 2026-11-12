@@ -268,7 +268,7 @@ while (($#)); do
             printf 'Run xclip --watch to bridge the Windows clipboard to Linux graphical applications.\n'
             printf 'Targets: UTF8_STRING, STRING, TEXT, text/plain, text/plain;charset=utf-8, image/png, TARGETS, text/uri-list\n'
             exit 0 ;;
-        -version|--version) printf 'xclip WSL bridge 2.0\n'; exit 0 ;;
+        -version|--version) printf 'xclip WSL bridge 2.1\n'; exit 0 ;;
         --) shift; files+=("$@"); break ;;
         -*) die "unsupported option: $1" ;;
         *) files+=("$1") ;;
@@ -298,21 +298,24 @@ work=$(mktemp -d /tmp/xclip-request.XXXXXXXX)
 copy_root=
 producer=
 keep_copy=false
-cleanup() {
-    if [[ -n $producer ]]; then kill "$producer" 2>/dev/null || true; wait "$producer" 2>/dev/null || true; fi
-    rm -rf -- "$work"
+cleanup_copy() {
     if [[ -n $copy_root && $keep_copy == false ]]; then
         chmod -R u+rwX -- "$copy_root" 2>/dev/null || true
         rm -rf -- "$copy_root"
     fi
+}
+cleanup() {
+    if [[ -n $producer ]]; then kill "$producer" 2>/dev/null || true; wait "$producer" 2>/dev/null || true; fi
+    rm -rf -- "$work"
+    cleanup_copy
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
 
 copy_files() {
-    : > "$work/paths"
-    copy_root=$(mktemp -d /tmp/chatgpt-clipboard.XXXXXXXX)
+    : > "$work/paths" || die 'cannot create copy manifest'
+    copy_root=$(mktemp -d /tmp/chatgpt-clipboard.XXXXXXXX) || die 'cannot create copy directory'
     index=0
     while IFS= read -r path_b64 <&3; do
         [[ -n $path_b64 ]] || continue
@@ -323,7 +326,7 @@ copy_files() {
         [[ $name != / && $name != . && $name != .. ]] || die 'cannot copy a filesystem root'
         index=$((index + 1))
         # Per-item subdirectories preserve duplicate basenames.
-        mkdir -- "$copy_root/$index"
+        mkdir -- "$copy_root/$index" || die 'cannot create item directory'
         cp -RL -- "$source_path" "$copy_root/$index/$name" || die "copy failed: $source_path"
         chmod -R u+rwX -- "$copy_root/$index" || die 'cannot set Linux copy permissions'
         destination="$copy_root/$index/$name"
@@ -338,15 +341,15 @@ copy_files() {
                     *) printf -v hex '%%%02X' "'$char"; uri+=$hex ;;
                 esac
             done
-            printf 'file://%s\r\n' "$uri" >> "$work/paths"
+            printf 'file://%s\r\n' "$uri" >> "$work/paths" || die 'cannot write copy manifest'
         else
-            printf '%s\n' "$destination" >> "$work/paths"
+            printf '%s\n' "$destination" >> "$work/paths" || die 'cannot write copy manifest'
         fi
     done
     ((index > 0)) || die 'empty file list'
     # Publish paths only after every copy has completed successfully.
+    cat -- "$work/paths" || die 'cannot output copy manifest'
     keep_copy=true
-    cat -- "$work/paths"
 }
 
 # Services may have a minimal PATH without WSL interop directories.
@@ -423,7 +426,8 @@ WATCH_POWERSHELL
     while IFS=' ' read -r frame_type payload; do
         payload=${payload%$'\r'}
         source_hash=$(printf '%s %s' "$frame_type" "$payload" | sha256sum)
-        [[ $source_hash != "$last_source" ]] || continue
+        # A new FileDrop event may contain changed files at the same paths.
+        [[ $frame_type == FILES || $source_hash != "$last_source" ]] || continue
         case "$frame_type" in
             IMAGE) mime=image/png; printf '%s' "$payload" | base64 -d > "$work/payload" ;;
             TEXT) mime=UTF8_STRING; printf '%s' "$payload" | base64 -d > "$work/payload" ;;
@@ -433,7 +437,15 @@ WATCH_POWERSHELL
                 read -r -a encoded_paths <<< "$payload"
                 printf '%s\n' "${encoded_paths[@]}" > "$work/file-paths"
                 exec 3< "$work/file-paths"
-                copy_files > "$work/payload"
+                # Isolate per-event failures while cleaning incomplete copies.
+                if ! (
+                    trap cleanup_copy EXIT
+                    copy_files
+                ) > "$work/payload"; then
+                    exec 3<&-
+                    printf 'xclip bridge: file copy failed; waiting for the next clipboard event\n' >&2
+                    continue
+                fi
                 exec 3<&-
                 ;;
             *) die 'invalid clipboard watch frame' ;;
