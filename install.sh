@@ -5,8 +5,8 @@ umask 022
 
 DRY_RUN=false
 CHECK_ONLY=false
-CLIPBOARD_ONLY=false
-UPGRADE=true
+CLIPBOARD_ONLY=true
+UPGRADE=false
 TRIM=false
 STEP=准备
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/wsl-ai-setup"
@@ -23,10 +23,12 @@ trap 'printf "\n安装在【%s】失败（第%s行）。修复报错后可重新
 usage() {
     cat <<'HELP'
 用法 bash install.sh [选项]
-默认安装中文环境、Fcitx5、剪贴板桥接及自动启动。
+默认精简安装剪贴板桥接及自动启动。
   --dry-run         显示安装计划，保持系统当前状态
   --check           检查依赖和后台服务状态
   --clipboard-only  仅安装剪贴板及其自动启动服务
+  --with-chinese    额外安装中文字体、语言和 Fcitx5 输入法
+  --upgrade         显式执行系统软件升级
   --skip-upgrade    跳过系统软件升级
   --trim            完成后对 Linux 根文件系统执行 fstrim
   -h, --help        显示帮助
@@ -39,7 +41,9 @@ parse_args() {
         case "$1" in
             --dry-run) DRY_RUN=true ;;
             --check) CHECK_ONLY=true ;;
-            --clipboard-only) CLIPBOARD_ONLY=true; UPGRADE=false ;;
+            --clipboard-only) CLIPBOARD_ONLY=true ;;
+            --with-chinese) CLIPBOARD_ONLY=false ;;
+            --upgrade) UPGRADE=true ;;
             --skip-upgrade) UPGRADE=false ;;
             --trim) TRIM=true ;;
             -h|--help) usage; exit 0 ;;
@@ -148,8 +152,7 @@ preflight() {
 
 install_packages() {
     STEP=系统组件
-    local packages=(ca-certificates curl wget git coreutils util-linux libc-bin
-        xclip libx11-6 libxmu6 libxt6 x11-utils file diffutils dbus-x11 dbus-user-session
+    local packages=(coreutils util-linux libc-bin diffutils xclip dbus-user-session
         systemd systemd-sysv)
     if [[ $CLIPBOARD_ONLY == false ]]; then
         packages+=(locales fonts-noto-cjk fonts-wqy-microhei fontconfig fcitx5
@@ -157,7 +160,7 @@ install_packages() {
     fi
     apt_run update
     if [[ $UPGRADE == true ]]; then apt_run upgrade -y; fi
-    apt_run install -y "${packages[@]}"
+    apt_run install -y --no-install-recommends "${packages[@]}"
 }
 
 configure_wsl() {
@@ -668,7 +671,9 @@ main() {
     STEP=完成
     log "配置备份位于 $BACKUP_DIR"
     check_installation
-    printf '\n请重新进入 WSL 用户会话，让中文与输入法环境变量生效。\n'
+    if [[ $CLIPBOARD_ONLY == false ]]; then
+        printf '\n请重新进入 WSL 用户会话，让中文与输入法环境变量生效。\n'
+    fi
     printf '验证 Windows 文本、截图和文件在主聊天输入框的 Ctrl+V。\n'
     printf '开机后进入该 WSL 用户会话时，systemd 自动启动桥接；重启后的实际粘贴仍需验收。\n'
 }
